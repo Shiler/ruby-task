@@ -27,9 +27,10 @@ class Parser
           Console.fetching_page(current_page += 1)
         end
         @semaphore.acquire
+        sleep(0.5)
         page = link_t.click
         @semaphore.release
-        @processed_products << parse_product(page)
+        @processed_products += parse_product(page)
       end
     end
 
@@ -50,34 +51,21 @@ class Parser
     end
   end
 
-  def not_found?(page)
-    page = Nokogiri::HTML(page.body)
-    if page.xpath("//div[@class=clearfix]//h1").text == "Page Not Found"
-      true
-    else
-      false
-    end
-  end
-
   def parse_product(page)
     html = Nokogiri::HTML(page.body)
-    multiproduct?(html) ? parse_multiproduct(html) : parse_regular_product(html)
-  end
-
-  def multiproduct?(html)
-    !html.xpath('//div[@class="attribute_list"]').empty?
-  end
-
-  def parse_regular_product(html)
+    products_array = Array.new
     image = get_image(html)
     name = get_name(html)
-    puts image + " --- " + name
-  end
-
-  def parse_multiproduct(html)
-    image = get_image(html)
-    name = get_name(html)
-    puts image + " --- " + name
+    prices = get_prices(html)
+    prices.each do |opt|
+    products_array << {
+        'name' => name.concat(' ').concat(opt['weight']),
+        'price' => opt['price'],
+        'image' => image
+      }
+    end
+    puts products_array
+    products_array
   end
 
   def get_image(html)
@@ -85,50 +73,26 @@ class Parser
   end
 
   def get_name(html)
-    html.xpath('//h1[@itemprop="name"]').text
+    html.xpath('//h1[@itemprop="name"]').text.gsub("\n", "").strip.gsub("\t", " ")
   end
 
-  def extract_multiproduct_data(html_mechanize)
-    html_page = Nokogiri::HTML(html_mechanize.body)
-    name = html_page.xpath('//h1[@id="product_family_heading"]').text
-    products = html_page.xpath('//div[@class="title"]')
-    products.each_with_index do |product, index|
-      Console.fetching_product(index + 1)
-      puts compose_product(html_page, name, products, index)
-      @processed_products << compose_product(html_page, name, products, index)
+  def get_prices(html)
+    options = html.xpath('//ul[@class="attribute_labels_lists"]//li')
+    prices = Array.new
+    options.each_with_index do |option, index|
+      prices << extract_price_hash(option, index)
     end
+    prices
   end
 
-  def compose_product(html_page, name, products, index)
+  def extract_price_hash(option, index)
+    spans = option.xpath('//ul[@class="attribute_labels_lists"]//li//span')
+    weight = spans[index*4].text
+    price = spans[index*4 + 1].text.gsub("\n", "").strip
     {
-      :name => name + ' ' + get_name_weight(products[index]),
-      :price => get_price(products, index),
-      :image => get_image(html_page, products, index),
-      :delivery_time => get_delivery_time(products, index),
-      :product_code => get_product_code(products, index)
+      'weight' => weight,
+      'price' => price
     }
-  end
-
-  def get_name_weight(product)
-    product.text.gsub("\n", '').gsub("\t", '')
-  end
-
-  def get_price(products, index)
-    products.xpath('//span[@itemprop="price"]')[index].text
-  end
-
-  def get_delivery_time(products, index)
-    if !products.xpath('//strong[@class="stock in-stock"]')[index].nil?
-      products.xpath('//strong[@class="stock in-stock"]')[index].text.gsub("\t", '').gsub("\n", '').strip!
-    elsif !products.xpath('//strong[@class="stock out-stock"]')[index].nil?
-      products.xpath('//strong[@class="stock out-stock"]')[index].text.gsub("\t", '').gsub("\n", '').strip!
-    else
-      'undefined'
-    end
-  end
-
-  def get_product_code(products, index)
-    products.xpath('//strong[@itemprop="sku"]')[index].text
   end
 
 end

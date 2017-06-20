@@ -6,4 +6,5 @@ require './file_manager.rb'
 
 console = Console.new
 parser = Parser.new(console.url)
-parser.parse
+products = parser.parse
+FileManager.save(products, console.filename)
